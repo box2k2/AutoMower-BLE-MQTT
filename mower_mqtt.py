@@ -251,7 +251,7 @@ async def ha_discovery(client: aiomqtt.Client, status: Dict[str, Any]) -> None:
         "pause_command_topic": f"{CFG.mqtt_base_topic}/command",
         "start_mowing_command_topic": f"{CFG.mqtt_base_topic}/command",
     }
-    await client.publish("homeassistant/lawn_mower/automower_ble/config", json.dumps(mower_confi), retain=True)
+    await client.publish("homeassistant/lawn_mower/automower_ble/config", json.dumps(mower_config), retain=True)
 
     sensor_mappings = {
         "Battery": {"device_class": "battery", "unit_of_measurement": "%"},
