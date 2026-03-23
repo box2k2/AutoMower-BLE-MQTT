@@ -172,6 +172,15 @@ async def collect_status(mower: Mower) -> Dict[str, Any]:
             LOG.error("One or more mower commands failed, skipping this poll cycle")
             return status
 
+        # Mapping to HA valid mower states: mowing, docked, paused, error
+        ha_state = "error"
+        if raw_state == "IN_OPERATION":
+            ha_state = "mowing"
+        elif raw_state in ["IN_CHARGING_STATION", "RESTRICTED"]:
+            ha_state = "docked"
+        elif any(x in raw_state for x in ["OFF", "PAUSED", "HATCH"]):
+            ha_state = "paused"
+        
         status.update(
             Battery=str(battery),
             Charging="ON" if charging else "OFF",
@@ -229,23 +238,20 @@ async def ha_discovery(client: aiomqtt.Client, status: Dict[str, Any]) -> None:
     availability_topic = f"{CFG.mqtt_base_topic}/availability"
     await client.publish(availability_topic, "online", retain=True)
 
-    # Binary switch
-    switch_config = {
-        "name": "Automower Control",
-        "command_topic": f"{CFG.mqtt_base_topic}/command",
-        "state_topic": f"{CFG.mqtt_base_topic}/status",
-        "availability_topic": availability_topic,
-        "icon": "mdi:robot-mower",
-        "payload_on": "MOW",
-        "payload_off": "PARK",
-        "unique_id": "automower_switch_01",
+    # Mower Entity
+    mower_config = {
+        "name": "Automower",
+        "unique_id": "automower_ble_mower_01",
         "device": device_info,
+        "availability_topic": availability_topic,
+        "activity_state_topic": f"{CFG.mqtt_base_topic}/status",
+        "activity_value_template": "{{ value_json.HA_State }}",
+        "command_topic": f"{CFG.mqtt_base_topic}/command",
+        "dock_command_topic": f"{CFG.mqtt_base_topic}/command",
+        "pause_command_topic": f"{CFG.mqtt_base_topic}/command",
+        "start_mowing_command_topic": f"{CFG.mqtt_base_topic}/command",
     }
-    await client.publish(
-        "homeassistant/switch/automower_ble/config",
-        json.dumps(switch_config),
-        retain=True,
-    )
+    await client.publish("homeassistant/lawn_mower/automower_ble/config", json.dumps(mower_confi), retain=True)
 
     sensor_mappings = {
         "Battery": {"device_class": "battery", "unit_of_measurement": "%"},
