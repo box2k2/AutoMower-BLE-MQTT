@@ -27,7 +27,8 @@ from automower_ble.protocol import (
 )
 from automower_ble.error_codes import ErrorCodes
 
-from asyncio_mqtt import Client as MQTTClient
+from aiomqtt import Client as MQTTClient
+from aiomqtt import MqttError  # Ensure MqttError is explicitly imported
 
 # ----------------------------
 # Logging
@@ -42,14 +43,14 @@ LOG = logging.getLogger("mower_mqtt")
 # ----------------------------
 # Config
 # ----------------------------
-MQTT_BROKER = os.getenv("MQTT_HOST", "192.168.0.5")
+MQTT_BROKER = os.getenv("MQTT_HOST", "192.168.x.x")
 MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
 MQTT_USERNAME = os.getenv("MQTT_USER", "mqtt")
 MQTT_PASSWORD = os.getenv("MQTT_PASS", "mqtt")
 MQTT_BASE_TOPIC = os.getenv("MOWER_BASE_TOPIC", "homeassistant/mower/automower_ble")
 POLL_INTERVAL = int(os.getenv("MOWER_POLL", 60))
 
-MOWER_ADDRESS = os.getenv("MOWER_ADDRESS", "60:98:11:22:33:44")
+MOWER_ADDRESS = os.getenv("MOWER_ADDRESS", "xx:xx:xx:xx:xx:xx")
 MOWER_PIN = int(os.getenv("MOWER_PIN", "1234"))
 
 # ----------------------------
@@ -61,11 +62,9 @@ async def connect_mower():
     LOG.info("Connecting to mower...")
     device = await BleakScanner.find_device_by_address(MOWER_ADDRESS)
     if device is None:
-        LOG.warn("Unable to connect to device address: " + mower.address)
-        LOG.warn(
-            "Please make sure the device address is correct, the device is powered on and nearby"
-        )
-        LOG.warn("FAILED TO connect to mower")
+        LOG.warning("Unable to connect to device address: " + mower.address)
+        LOG.warning("Please make sure the device address is correct, the device is powered on and nearby")
+        LOG.warning("FAILED TO connect to mower")
         return
     await mower.connect(device)
     LOG.info("BLE connection established ✅")
@@ -135,27 +134,50 @@ async def ha_discovery(client, status):
         "model": "Automower BLE"
     }
 
-    # Binary switch for MOW / PARK
-    switch_config = {
-        "name": "Automower Switch",
-        "command_topic": f"{MQTT_BASE_TOPIC}/command",
-        "state_topic": f"{MQTT_BASE_TOPIC}/status",
+# Lawn Mower configuration (Replaces the switch_config)
+    mower_config = {
+        "name": "Automower",
+        "unique_id": "automower_mower_01",
+        "device": device_info,
         "icon": "mdi:robot-mower",
-        "payload_on": "MOW",
-        "payload_off": "PARK",
-        "unique_id": "automower_switch_01",
-        "device": device_info
+        
+        # Action Command Topics
+        # By default, HA sends "start_mowing", "pause", and "dock" 
+        # We use templates to map these to your "MOW" and "PARK" payloads
+        "start_mowing_command_topic": f"{MQTT_BASE_TOPIC}/command",
+        "start_mowing_command_template": "MOW",
+        
+        "dock_command_topic": f"{MQTT_BASE_TOPIC}/command",
+        "dock_command_template": "PARK",
+
+        # Adding the Pause Command
+#        "pause_command_topic": f"{MQTT_BASE_TOPIC}/command",
+#        "pause_command_template": "PAUSE",
+
+        # Activity Mapping from JSON
+        "activity_state_topic": f"{MQTT_BASE_TOPIC}/status",
+        # We parse the JSON 'value', grab 'Activity', and map it to HA requirements
+        "activity_value_template": (
+            "{% set activity = value_json.Activity %}"
+            "{% if activity == 'MOWING' or activity == 'GOING_OUT' or activity =='MOW' %}mowing"
+            "{% elif activity == 'PARKED' %}docked"
+            "{% elif activity == 'GOING_HOME' %}returning" 
+            "{% else %}error{% endif %}"
+        )
+
     }
+
+    # Discovery Topic: 'switch' changes to 'lawn_mower'
     await client.publish(
-        "homeassistant/switch/automower_ble/config",
-        json.dumps(switch_config),
+        "homeassistant/lawn_mower/automower_ble/config",
+        json.dumps(mower_config),
         retain=True
     )
 
     # Create a sensor for each key in the status dictionary
     for key, value in status.items():
         sensor_config = {
-            "name": f"Automower {key}",
+            "name": f"{key}",
             "state_topic": f"{MQTT_BASE_TOPIC}/status",
             "value_template": f"{{{{ value_json.{key} }}}}",
             "unique_id": f"automower_{key}_01",
@@ -165,6 +187,8 @@ async def ha_discovery(client, status):
         # Add units if applicable
         if "Time" in key or "Usage" in key:
             sensor_config["unit_of_measurement"] = "s"
+            sensor_config["device_class"] = "duration"
+            sensor_config["state_class"] = "measurement"
         elif "NextStartSchedule" in key:
             sensor_config["device_class"] = "timestamp"
         elif "LastError" in key:
@@ -198,69 +222,65 @@ async def ha_discovery(client, status):
 # Main Async Loop
 # ----------------------------
 async def main():
-    mower = await connect_mower()
-    known_keys = set()
+    mower = None
+    while mower is None:
+        LOG.info("Attempting to connect to mower...")
+        mower_instance = await connect_mower()
+        if mower_instance:
+            mower = mower_instance
+            LOG.info("Verified connection!")
+        else:
+            await asyncio.sleep(30)
+
+    # Use a dictionary or a class to keep track of keys 
+    # This avoids the 'nonlocal' scoping headache entirely
+    context = {"known_keys": set()}
 
     while True:
         try:
-
             async with MQTTClient(
                 hostname=MQTT_BROKER,
                 port=MQTT_PORT,
                 username=MQTT_USERNAME,
                 password=MQTT_PASSWORD
             ) as client:
+                
+                await client.subscribe(f"{MQTT_BASE_TOPIC}/command")
+                
+                # Initial status
+                status = await collect_status(mower)
+                if status:
+                    context["known_keys"].update(status.keys())
+                    await ha_discovery(client, status)
+                    await client.publish(f"{MQTT_BASE_TOPIC}/status", json.dumps(status))
 
-                async with client.unfiltered_messages() as messages:
-                    await client.subscribe(f"{MQTT_BASE_TOPIC}/command")
-                    LOG.info("Subscribed to %s/command", MQTT_BASE_TOPIC)
+                async def status_loop():
+                    while True:
+                        await asyncio.sleep(POLL_INTERVAL)
+                        current_status = await collect_status(mower)
+                        if current_status:
+                            # Access the set via the dictionary key
+                            new_keys = set(current_status.keys()) - context["known_keys"]
+                            if new_keys:
+                                LOG.info("New sensors detected: %s", new_keys)
+                                await ha_discovery(client, current_status)
+                                context["known_keys"].update(new_keys)
+                            
+                            await client.publish(f"{MQTT_BASE_TOPIC}/status", json.dumps(current_status))
 
-                    # Initial status and HA discovery
-                    status = await collect_status(mower)
-                    if status:
-                        known_keys.update(status.keys())
-                        await ha_discovery(client, status)
-                        LOG.info("Initial Home Assistant discovery published")
+                status_task = asyncio.create_task(status_loop())
 
-                    # Status publishing loop
-                    async def status_loop():
-                        nonlocal known_keys
-                        while True:
-                            status = await collect_status(mower)
-                            if status:
-                                # Update HA discovery if new keys appear
-                                new_keys = set(status.keys()) - known_keys
-                                if new_keys:
-                                    LOG.info("New keys detected, updating HA discovery: %s", new_keys)
-                                    await ha_discovery(client, status)
-                                    known_keys.update(new_keys)
-                                # Publish current status
-                                LOG.info("Publishing status: %s", status)
-                                try:
-                                    await client.publish(
-                                        f"{MQTT_BASE_TOPIC}/status",
-                                        json.dumps(status)
-                                    )
-                                except MqttError as e:
-                                    LOG.error("MQTT publish error: %s", e)
-                            await asyncio.sleep(POLL_INTERVAL)
+                # The command listener keeps the connection open
+                async for message in client.messages:
+                    payload = message.payload.decode().strip()
+                    LOG.info("Received MQTT command: %s", payload)
+                    await send_command(mower, payload)
+                
+                status_task.cancel()
 
-                    loop_task = asyncio.create_task(status_loop())
-
-                    # Handle incoming MQTT messages
-                    async for msg in messages:
-                        try:
-                            payload = msg.payload.decode().strip()
-                            LOG.info("Received MQTT command: %s", payload)
-                            await send_command(mower, payload)
-                        except Exception as e:
-                            LOG.error("Error handling command: %s", e)
-
-                    await loop_task
-
-        except MqttError as e:
-            LOG.error("MQTT loop error: %s; reconnecting in 5s", e)
-            await asyncio.sleep(5)
+        except Exception as e:
+            LOG.error("Loop error: %s. Reconnecting in 10s...", e)
+            await asyncio.sleep(10)
 
 # ----------------------------
 # Run
@@ -270,3 +290,5 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         LOG.info("Interrupted, shutting down...")
+    except Exception as e:
+        print(f"Kernel Panic: {e}")
