@@ -68,6 +68,14 @@ async def connect_mower():
         return
     await mower.connect(device)
     LOG.info("BLE connection established ✅")
+    try:
+        if hasattr(mower.client, 'services'):
+            _ = mower.client.services
+        elif hasattr(mower.client, '_client'):
+            _ = mower.client._client.services
+        LOG.info("Service discovery triggered successfully.")
+    except Exception as e:
+        LOG.warning(f"Manual discovery trigger failed: {e}")
     return mower
 
 async def collect_status(mower):
