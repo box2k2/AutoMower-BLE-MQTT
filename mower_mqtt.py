@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
+#  Forked from
 #  mower_mqtt.py by Andy Brown https://github.com/andyb2000/AutoMower-BLE-MQTT/
 # ------------------------------------------------------------------------------
-VERSION = "0.0.1"
+VERSION = "0.0.2"
 
 import asyncio
 import json
@@ -68,6 +68,10 @@ async def connect_mower():
         return
     await mower.connect(device)
     LOG.info("BLE connection established ✅")
+    
+    # Hard sleep to allow the Pi and Mower to finish background GATT discovery
+    await asyncio.sleep(10)
+
     try:
         if hasattr(mower.client, 'services'):
             _ = mower.client.services
