@@ -3,9 +3,11 @@
 #  Forked from
 #  mower_mqtt.py by Andy Brown https://github.com/andyb2000/AutoMower-BLE-MQTT/
 # ------------------------------------------------------------------------------
-VERSION = "0.0.2"
+VERSION = "0.0.3"
 
 import asyncio
+import subprocess
+import sys
 import json
 import logging
 import os
@@ -50,7 +52,7 @@ MQTT_PASSWORD = os.getenv("MQTT_PASS", "mqtt")
 MQTT_BASE_TOPIC = os.getenv("MOWER_BASE_TOPIC", "homeassistant/mower/automower_ble")
 POLL_INTERVAL = int(os.getenv("MOWER_POLL", 60))
 
-MOWER_ADDRESS = os.getenv("MOWER_ADDRESS", "xx:xx:xx:xx:xx:xx")
+MOWER_ADDRESS = os.getenv("MOWER_ADDRESS", "00:00:00:00:00:00")
 MOWER_PIN = int(os.getenv("MOWER_PIN", "1234"))
 
 # ----------------------------
@@ -63,12 +65,14 @@ async def connect_mower():
     device = await BleakScanner.find_device_by_address(MOWER_ADDRESS)
     if device is None:
         LOG.warning("Unable to connect to device address: " + mower.address)
-        LOG.warning("Please make sure the device address is correct, the device is powered on and nearby")
+        LOG.warning(
+            "Please make sure the device address is correct, the device is powered on and nearby"
+        )
         LOG.warning("FAILED TO connect to mower")
         return
     await mower.connect(device)
     LOG.info("BLE connection established ✅")
-    
+
     # Hard sleep to allow the Pi and Mower to finish background GATT discovery
     await asyncio.sleep(10)
 
@@ -106,7 +110,23 @@ async def collect_status(mower):
             data["CurrUpdateSchedule"] = dt.datetime.now(tz=dt.timezone.utc).isoformat()
             status.update(data)
     except Exception as e:
-        LOG.warning("Failed to get status: %s", e)
+        if "Service Discovery" in str(e):
+            LOG.error("🚨 Critical Bluetooth Sync Loss detected in loop!")
+            
+            # 1. Restart the system bluetooth service
+            LOG.info("Resetting Raspberry Pi Bluetooth stack...")
+            subprocess.run(["sudo", "systemctl", "restart", "bluetooth"], check=True)
+            
+            # 2. Give the hardware a moment to wake up
+            await asyncio.sleep(10)
+            
+            # 3. Exit the script. 
+            # If you are using Docker or a Systemd Service (recommended), 
+            # it will automatically restart the script in a clean state.
+            LOG.warning("Exiting script to force a clean reconnect.")
+            sys.exit(1) 
+        else:
+            LOG.warning(f"Failed to get status: {e}")
     return status
 
 async def send_command(mower, cmd):
