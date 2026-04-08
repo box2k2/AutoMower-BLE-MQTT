@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-#  Forked from
+
 #  mower_mqtt.py by Andy Brown https://github.com/andyb2000/AutoMower-BLE-MQTT/
 # ------------------------------------------------------------------------------
-VERSION = "0.0.3"
+VERSION = "0.0.5"
 
 import asyncio
 import subprocess
@@ -243,6 +243,28 @@ async def ha_discovery(client, status):
         elif "number" in key.lower():
             sensor_config["unit_of_measurement"] = None  # count
 
+        # Renames
+        if key == "cuttingBladeUsageTime":
+            sensor_config["name"] = "Blade Usage Time"
+        elif key == "numberOfCollisions":
+            sensor_config["name"] = "Collisions"
+        elif key == "totalChargingTime":
+            sensor_config["name"] = "Total Charging Time"
+        elif key == "totalCuttingTime":
+            sensor_config["name"] = "Total Cutting Time"
+        elif key == "totalRunningTime":
+            sensor_config["name"] = "Total Running Time"
+        elif key == "totalSearchingTime":
+            sensor_config["name"] = "Total Searching Time"
+        elif key == "LastError":
+            sensor_config["name"] = "Last Error"
+        elif key == "LastErrorSchedule":
+            sensor_config["name"] = "Last Error Time" 
+        elif key == "NextStartSchedule":
+            sensor_config["name"] = "Next Scheduled Start" 
+        elif key == "CurrUpdateSchedule":
+            sensor_config["name"] = "Last Status Update" 
+
         await client.publish(
             f"homeassistant/sensor/automower_ble_{key.lower()}/config",
             json.dumps(sensor_config),
@@ -323,4 +345,9 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         LOG.info("Interrupted, shutting down...")
     except Exception as e:
-        print(f"Kernel Panic: {e}")
+        if "BleakBluetoothNotAvailableReason.POWERED_OFF" in str(e):
+            LOG.error("Critical Bluetooth powered off - Attempting power on")
+            LOG.info("Bluetooth power on...")
+            subprocess.run(["sudo", "bluetoothctl", "power", "on"], check=True)
+        else:
+            print(f"Kernel Panic: {e}")
