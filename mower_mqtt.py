@@ -3,7 +3,7 @@
 
 #  mower_mqtt.py by Andy Brown https://github.com/andyb2000/AutoMower-BLE-MQTT/
 # ------------------------------------------------------------------------------
-VERSION = "0.0.6"
+VERSION = "0.0.7"
 
 import asyncio
 import subprocess
@@ -110,8 +110,8 @@ async def collect_status(mower):
             data["CurrUpdateSchedule"] = dt.datetime.now(tz=dt.timezone.utc).isoformat()
             status.update(data)
     except Exception as e:
-        if "Service Discovery" in str(e):
-            LOG.error("🚨 Critical Bluetooth Sync Loss detected in loop!")
+        if "Service Discovery" in str(e) or "write_char" in str(e):
+            LOG.error("Bluetooth Sync Loss detected in loop!")
             
             # 1. Restart the system bluetooth service
             LOG.info("Resetting Raspberry Pi Bluetooth stack...")
