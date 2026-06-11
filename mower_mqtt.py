@@ -3,7 +3,7 @@
 
 #  mower_mqtt.py by Andy Brown https://github.com/andyb2000/AutoMower-BLE-MQTT/
 # ------------------------------------------------------------------------------
-VERSION = "0.0.7"
+VERSION = "0.0.8"
 
 import asyncio
 import subprocess
@@ -45,15 +45,22 @@ LOG = logging.getLogger("mower_mqtt")
 # ----------------------------
 # Config
 # ----------------------------
-MQTT_BROKER = os.getenv("MQTT_HOST", "192.168.x.x")
-MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
-MQTT_USERNAME = os.getenv("MQTT_USER", "mqtt")
-MQTT_PASSWORD = os.getenv("MQTT_PASS", "mqtt")
-MQTT_BASE_TOPIC = os.getenv("MOWER_BASE_TOPIC", "homeassistant/mower/automower_ble")
-POLL_INTERVAL = int(os.getenv("MOWER_POLL", 60))
+if os.path.exists("config.json"):
+    with open("config.json", "r") as f:
+        config = json.load(f)
+else:
+    config = {}
 
-MOWER_ADDRESS = os.getenv("MOWER_ADDRESS", "00:00:00:00:00:00")
-MOWER_PIN = int(os.getenv("MOWER_PIN", "1234"))
+# Use .get() on the dictionary to preserve your default fallback values
+MQTT_BROKER = config.get("MQTT_HOST", "192.168.x.x")
+MQTT_PORT = int(config.get("MQTT_PORT", 1883))
+MQTT_USERNAME = config.get("MQTT_USER", "mqtt")
+MQTT_PASSWORD = config.get("MQTT_PASS", "mqtt")
+MQTT_BASE_TOPIC = config.get("MOWER_BASE_TOPIC", "homeassistant/mower/automower_ble")
+POLL_INTERVAL = int(config.get("MOWER_POLL", 60))
+
+MOWER_ADDRESS = config.get("MOWER_ADDRESS", "00:00:00:00:00:00")
+MOWER_PIN = int(config.get("MOWER_PIN", 1234))
 
 # ----------------------------
 # Helper Functions
