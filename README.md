@@ -30,7 +30,20 @@ pip3 install automower-ble --break-system-packages
 python libraries are available/debian packaged)
 
 # Configuration
-Modify my script to change the variables near the start for your environment.
+Create a file config.json in the same folder or update script to change the variables near the start for your environment.
+
+```bash
+{
+  "MQTT_HOST": "192.168.1.50",
+  "MQTT_PORT": 1883,
+  "MQTT_USER": "my_mqtt_user",
+  "MQTT_PASS": "my_secret_password",
+  "MOWER_BASE_TOPIC": "homeassistant/mower/automower_ble",
+  "MOWER_POLL": 60,
+  "MOWER_ADDRESS": "AA:BB:CC:DD:EE:FF",
+  "MOWER_PIN": 5678
+}
+```
 
 | Configuration | Env value     | Description                       |
 | :-------- | :------- | :-------------------------------- |
