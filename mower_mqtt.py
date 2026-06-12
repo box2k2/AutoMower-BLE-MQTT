@@ -3,7 +3,7 @@
 
 #  mower_mqtt.py by Andy Brown https://github.com/andyb2000/AutoMower-BLE-MQTT/
 # ------------------------------------------------------------------------------
-VERSION = "0.0.8"
+VERSION = "0.0.9"
 
 import asyncio
 import subprocess
@@ -357,8 +357,8 @@ if __name__ == "__main__":
             LOG.info("Bluetooth power on...")
             subprocess.run(["sudo", "bluetoothctl", "power", "on"], check=True)
         # Condition 2: The BlueZ daemon has locked up / desynced
-        elif "org.bluez.Error.NotPermitted" in str(e) or "Notify acquired" in str(e):
-            LOG.error("BlueZ controller lock-up detected (NotPermitted) - Initiating restart...")
+        elif "org.bluez.Error.NotPermitted" in str(e) or "Notify acquired" in str(e) or "TimeoutError" in str(e):
+            LOG.error("Bluetooth connection failure/timeout detected - Initiating restart stack...")
             try:
                 # 1. Restart the system daemon to drop dead sockets
                 subprocess.run(["sudo", "systemctl", "restart", "bluetooth"], check=True)
