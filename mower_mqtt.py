@@ -3,7 +3,7 @@
 
 #  mower_mqtt.py by Andy Brown https://github.com/andyb2000/AutoMower-BLE-MQTT/
 # ------------------------------------------------------------------------------
-VERSION = "0.0.9"
+VERSION = "0.0.10"
 
 import asyncio
 import subprocess
@@ -364,7 +364,8 @@ if __name__ == "__main__":
                 subprocess.run(["sudo", "systemctl", "restart", "bluetooth"], check=True)
                 # 2. Cycle the adapter power to clear physical states
                 subprocess.run(["sudo", "bluetoothctl", "power", "off"], check=True)
-                time.sleep(3)
+                LOG.info("Wait (60s)....")
+                time.sleep(60)
                 subprocess.run(["sudo", "bluetoothctl", "power", "on"], check=True)
                 LOG.info("Bluetooth daemon and controller successfully power-cycled.")
             except Exception as reset_err:
