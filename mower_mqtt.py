@@ -3,7 +3,7 @@
 
 #  mower_mqtt.py by Andy Brown https://github.com/andyb2000/AutoMower-BLE-MQTT/
 # ------------------------------------------------------------------------------
-VERSION = "0.0.11"
+VERSION = "0.0.10"
 
 import asyncio
 import subprocess
@@ -317,20 +317,17 @@ async def main():
 
                 async def status_loop():
                     while True:
-                        try:
-                            await asyncio.sleep(POLL_INTERVAL)
-                            current_status = await collect_status(mower)
-                            if current_status:
-                                new_keys = set(current_status.keys()) - context["known_keys"]
-                                if new_keys:
-                                    LOG.info("New sensors detected: %s", new_keys)
-                                    await ha_discovery(client, current_status)
-                                    context["known_keys"].update(new_keys)
-                                
-                                await client.publish(f"{MQTT_BASE_TOPIC}/status", json.dumps(current_status))
-                        except Exception as e:
-                            # Let the error escape the background loop and bubble out to your global handler!
-                            raise e
+                        await asyncio.sleep(POLL_INTERVAL)
+                        current_status = await collect_status(mower)
+                        if current_status:
+                            # Access the set via the dictionary key
+                            new_keys = set(current_status.keys()) - context["known_keys"]
+                            if new_keys:
+                                LOG.info("New sensors detected: %s", new_keys)
+                                await ha_discovery(client, current_status)
+                                context["known_keys"].update(new_keys)
+                            
+                            await client.publish(f"{MQTT_BASE_TOPIC}/status", json.dumps(current_status))
 
                 status_task = asyncio.create_task(status_loop())
 
